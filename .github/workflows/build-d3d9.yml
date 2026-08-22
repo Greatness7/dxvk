@@ -1,0 +1,68 @@
+name: Build d3d9.dll
+
+# Morrowind is a 32-bit process and MGE XE only loads d3d9.dll, so this
+# builds that one DLL for that one architecture. The other D3D versions,
+# the 64-bit build and DXVK Native are all disabled.
+
+on:
+  push:
+    branches: [mge-xe]
+    tags: ['v*']
+  pull_request:
+    branches: [mge-xe]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+        # meson's vcs_tag() needs history to describe the version
+        fetch-depth: 0
+
+    - name: Setup problem matcher
+      uses: Joshua-Ashton/gcc-problem-matcher@master
+
+    - name: Build 32-bit d3d9.dll
+      uses: Joshua-Ashton/arch-mingw-github-action@v8
+      with:
+        command: |
+          meson setup \
+            --cross-file build-win32.txt \
+            --buildtype release \
+            -Ddebug=false \
+            -Doptimization=3 \
+            -Db_ndebug=true \
+            -Denable_dxgi=false \
+            -Denable_d3d8=false \
+            -Denable_d3d10=false \
+            -Denable_d3d11=false \
+            build
+          ninja -C build
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: d3d9-${{ github.sha }}
+        path: build/src/d3d9/d3d9.dll
+        if-no-files-found: error
+
+    - name: Attach to release
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        cp build/src/d3d9/d3d9.dll d3d9.dll
+        gh release create "$TAG" --generate-notes d3d9.dll \
+          || gh release upload "$TAG" d3d9.dll --clobber
