@@ -51,6 +51,7 @@ namespace dxvk {
     DXT3 = MAKEFOURCC('D', 'X', 'T', '3'),
     DXT4 = MAKEFOURCC('D', 'X', 'T', '4'),
     DXT5 = MAKEFOURCC('D', 'X', 'T', '5'),
+    BC7  = MAKEFOURCC('B', 'C', '7', ' '),
     D16_LOCKABLE = 70,
     D32 = 71,
     D15S1 = 73,
@@ -270,7 +271,8 @@ namespace dxvk {
         || format == D3D9Format::DXT2
         || format == D3D9Format::DXT3
         || format == D3D9Format::DXT4
-        || format == D3D9Format::DXT5;
+        || format == D3D9Format::DXT5
+        || format == D3D9Format::BC7;
   }
 
   // D3D9 documentation says: IDirect3DSurface9::GetDC is valid on the following formats only:

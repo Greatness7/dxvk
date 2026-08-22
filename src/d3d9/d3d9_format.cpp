@@ -233,6 +233,11 @@ namespace dxvk {
         VK_FORMAT_BC3_SRGB_BLOCK,
         VK_IMAGE_ASPECT_COLOR_BIT };
 
+      case D3D9Format::BC7: return {
+        VK_FORMAT_BC7_UNORM_BLOCK,
+        VK_FORMAT_BC7_SRGB_BLOCK,
+        VK_IMAGE_ASPECT_COLOR_BIT };
+
       case D3D9Format::D16_LOCKABLE: return {
         VK_FORMAT_D16_UNORM,
         VK_FORMAT_UNDEFINED,
@@ -461,6 +466,7 @@ namespace dxvk {
       case D3D9Format::DXT3:
       case D3D9Format::DXT4:
       case D3D9Format::DXT5:
+      case D3D9Format::BC7:
       case D3D9Format::ATI1:
       case D3D9Format::ATI2:
         return { 4, 4, 1 };

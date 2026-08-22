@@ -44,6 +44,7 @@ namespace dxvk {
       ENUM_NAME(D3D9Format::DXT3);
       ENUM_NAME(D3D9Format::DXT4);
       ENUM_NAME(D3D9Format::DXT5);
+      ENUM_NAME(D3D9Format::BC7);
       ENUM_NAME(D3D9Format::D16_LOCKABLE);
       ENUM_NAME(D3D9Format::D32);
       ENUM_NAME(D3D9Format::D15S1);
