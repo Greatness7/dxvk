@@ -66,6 +66,7 @@ namespace dxvk {
     this->enumerateByDisplays           = config.getOption<bool>        ("d3d9.enumerateByDisplays",           true);
     this->cachedWriteOnlyBuffers        = config.getOption<bool>        ("d3d9.cachedWriteOnlyBuffers",          false);
     this->deviceLocalConstantBuffers    = config.getOption<Tristate>    ("d3d9.deviceLocalConstantBuffers",    Tristate::Auto);
+    this->deviceLocalStaticBuffers      = config.getOption<bool>        ("d3d9.deviceLocalStaticBuffers",      false);
     this->allowDirectBufferMapping      = config.getOption<bool>        ("d3d9.allowDirectBufferMapping",      true);
     this->forceDrawTimeBufferUpload     = config.getOption<bool>        ("d3d9.forceDrawTimeBufferUpload",     false);
     this->ignoreDefaultBufferLockRange  = config.getOption<bool>        ("d3d9.ignoreDefaultBufferLockRange",  false);

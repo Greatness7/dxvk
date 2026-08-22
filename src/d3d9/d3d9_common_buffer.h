@@ -13,6 +13,7 @@ namespace dxvk {
    */
   enum D3D9_COMMON_BUFFER_MAP_MODE {
     D3D9_COMMON_BUFFER_MAP_MODE_BUFFER,
+    D3D9_COMMON_BUFFER_MAP_MODE_DEVICE_LOCAL,
     D3D9_COMMON_BUFFER_MAP_MODE_DIRECT
   };
 
@@ -134,12 +135,33 @@ namespace dxvk {
     }
 
     inline Rc<DxvkResourceAllocation> DiscardMapSlice() {
+      if (unlikely(m_mapMode == D3D9_COMMON_BUFFER_MAP_MODE_DEVICE_LOCAL))
+        return nullptr;
+
       m_allocation = GetMapBuffer()->allocateStorage();
       return m_allocation;
     }
 
     inline Rc<DxvkResourceAllocation> GetMappedSlice() const {
       return m_allocation;
+    }
+
+    inline void SetTransientStaging(DxvkBufferSlice slice, void* mapPtr) {
+      m_transientSlice = std::move(slice);
+      m_transientMapPtr = mapPtr;
+    }
+
+    inline const DxvkBufferSlice& GetTransientSlice() const {
+      return m_transientSlice;
+    }
+
+    inline void* GetTransientMapPtr() const {
+      return m_transientMapPtr;
+    }
+
+    inline void ClearTransientStaging() {
+      m_transientSlice = DxvkBufferSlice();
+      m_transientMapPtr = nullptr;
     }
 
     inline DWORD GetMapFlags() const      { return m_mapFlags; }
@@ -238,6 +260,8 @@ namespace dxvk {
     Rc<DxvkBuffer>              m_stagingBuffer;
 
     Rc<DxvkResourceAllocation>  m_allocation;
+    DxvkBufferSlice             m_transientSlice;
+    void*                       m_transientMapPtr = nullptr;
 
     D3D9Range                   m_dirtyRange;
 

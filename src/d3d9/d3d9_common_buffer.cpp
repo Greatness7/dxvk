@@ -14,7 +14,8 @@ namespace dxvk {
     if (m_mapMode == D3D9_COMMON_BUFFER_MAP_MODE_BUFFER)
       m_stagingBuffer = CreateStagingBuffer();
 
-    m_allocation = GetMapBuffer()->storage();
+    if (m_mapMode != D3D9_COMMON_BUFFER_MAP_MODE_DEVICE_LOCAL)
+      m_allocation = GetMapBuffer()->storage();
 
     if (m_desc.Pool != D3DPOOL_DEFAULT)
       m_dirtyRange = D3D9Range(0, m_desc.Size);
@@ -83,6 +84,12 @@ namespace dxvk {
   D3D9_COMMON_BUFFER_MAP_MODE D3D9CommonBuffer::DetermineMapMode(const D3D9Options* options) const {
     if (m_desc.Pool != D3DPOOL_DEFAULT)
       return D3D9_COMMON_BUFFER_MAP_MODE_BUFFER;
+
+    if ((m_desc.Usage & D3DUSAGE_WRITEONLY)
+     && !(m_desc.Usage & D3DUSAGE_DYNAMIC)
+     && !m_parent->CanOnlySWVP()
+     && options->deviceLocalStaticBuffers)
+      return D3D9_COMMON_BUFFER_MAP_MODE_DEVICE_LOCAL;
 
     if (!(m_desc.Usage & D3DUSAGE_DYNAMIC))
       return D3D9_COMMON_BUFFER_MAP_MODE_BUFFER;

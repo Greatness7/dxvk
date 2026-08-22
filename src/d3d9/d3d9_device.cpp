@@ -5514,11 +5514,23 @@ namespace dxvk {
     }
 
     const bool directMapping = pResource->GetMapMode() == D3D9_COMMON_BUFFER_MAP_MODE_DIRECT;
+    const bool deviceLocalMapping = pResource->GetMapMode() == D3D9_COMMON_BUFFER_MAP_MODE_DEVICE_LOCAL;
     const bool needsReadback = pResource->NeedsReadback();
 
     uint8_t* data = nullptr;
 
-    if ((Flags & D3DLOCK_DISCARD) && (directMapping || needsReadback)) {
+    if (deviceLocalMapping) {
+      if (!pResource->GetTransientSlice().defined()) {
+        ThrottleAllocation();
+
+        D3D9BufferSlice slice = AllocStagingBuffer(desc.Size);
+        pResource->SetTransientStaging(std::move(slice.slice), slice.mapPtr);
+      }
+
+      data = reinterpret_cast<uint8_t*>(pResource->GetTransientMapPtr());
+      pResource->SetNeedsReadback(false);
+    }
+    else if ((Flags & D3DLOCK_DISCARD) && (directMapping || needsReadback)) {
       // If we're not directly mapped and don't need readback,
       // the buffer is not currently getting used anyway
       // so there's no reason to waste memory by discarding.
@@ -5591,32 +5603,52 @@ namespace dxvk {
 
   HRESULT D3D9DeviceEx::FlushBuffer(
         D3D9CommonBuffer*       pResource) {
-    // Wait until the amount of used staging memory is under a certain threshold to avoid using
-    // too much memory and even more so to avoid using too much address space.
-    ThrottleAllocation();
-
     auto dstBuffer = pResource->GetBufferSlice<D3D9_COMMON_BUFFER_TYPE_REAL>();
-    auto srcSlice = pResource->GetMappedSlice();
-
     D3D9Range& range = pResource->DirtyRange();
 
-    D3D9BufferSlice slice = AllocStagingBuffer(range.max - range.min);
-    void* srcData = reinterpret_cast<uint8_t*>(srcSlice->mapPtr()) + range.min;
-    memcpy(slice.mapPtr, srcData, range.max - range.min);
+    if (pResource->GetMapMode() == D3D9_COMMON_BUFFER_MAP_MODE_DEVICE_LOCAL) {
+      DxvkBufferSlice srcSlice = pResource->GetTransientSlice();
 
-    EmitCs([
-      cDstSlice  = dstBuffer,
-      cSrcSlice  = slice.slice,
-      cDstOffset = range.min,
-      cLength    = range.max - range.min
-    ] (DxvkContext* ctx) {
-      ctx->copyBuffer(
-        cDstSlice.buffer(),
-        cDstSlice.offset() + cDstOffset,
-        cSrcSlice.buffer(),
-        cSrcSlice.offset(),
-        cLength);
-    });
+      EmitCs([
+        cDstSlice  = dstBuffer,
+        cSrcSlice  = std::move(srcSlice),
+        cDstOffset = range.min,
+        cLength    = range.max - range.min
+      ] (DxvkContext* ctx) {
+        ctx->copyBuffer(
+          cDstSlice.buffer(),
+          cDstSlice.offset() + cDstOffset,
+          cSrcSlice.buffer(),
+          cSrcSlice.offset() + cDstOffset,
+          cLength);
+      });
+
+      pResource->ClearTransientStaging();
+    } else {
+      // Wait until the amount of used staging memory is under a certain threshold to avoid using
+      // too much memory and even more so to avoid using too much address space.
+      ThrottleAllocation();
+
+      auto srcSlice = pResource->GetMappedSlice();
+
+      D3D9BufferSlice slice = AllocStagingBuffer(range.max - range.min);
+      void* srcData = reinterpret_cast<uint8_t*>(srcSlice->mapPtr()) + range.min;
+      memcpy(slice.mapPtr, srcData, range.max - range.min);
+
+      EmitCs([
+        cDstSlice  = dstBuffer,
+        cSrcSlice  = slice.slice,
+        cDstOffset = range.min,
+        cLength    = range.max - range.min
+      ] (DxvkContext* ctx) {
+        ctx->copyBuffer(
+          cDstSlice.buffer(),
+          cDstSlice.offset() + cDstOffset,
+          cSrcSlice.buffer(),
+          cSrcSlice.offset(),
+          cLength);
+      });
+    }
 
     pResource->DirtyRange().Clear();
     TrackBufferMappingBufferSequenceNumber(pResource);
@@ -5633,6 +5665,18 @@ namespace dxvk {
 
     if (pResource->DecrementLockCount() != 0)
       return D3D_OK;
+
+    if (pResource->GetMapMode() == D3D9_COMMON_BUFFER_MAP_MODE_DEVICE_LOCAL) {
+      pResource->SetMapFlags(0);
+
+      if (pResource->DirtyRange().IsDegenerate()) {
+        pResource->ClearTransientStaging();
+        return D3D_OK;
+      }
+
+      FlushBuffer(pResource);
+      return D3D_OK;
+    }
 
     // Nothing else to do for directly mapped buffers. Those were already written.
     if (pResource->GetMapMode() != D3D9_COMMON_BUFFER_MAP_MODE_BUFFER)

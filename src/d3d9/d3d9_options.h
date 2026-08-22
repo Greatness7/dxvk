@@ -125,6 +125,9 @@ namespace dxvk {
     /// Use device local memory for constant buffers.
     Tristate deviceLocalConstantBuffers;
 
+    /// Use transient device local uploads for static write-only buffers.
+    bool deviceLocalStaticBuffers;
+
     /// Disable direct buffer mapping
     bool allowDirectBufferMapping;
 

@@ -620,6 +620,11 @@ namespace dxvk {
     { R"(\\TESV\.exe$)", {{
       { "d3d9.hideNvidiaGpu",               "True" },
     }} },
+    /* The Elder Scrolls III: Morrowind           *
+     * 32-bit process exhausts VA with large mods */
+    { R"(\\Morrowind\.exe$)", {{
+      { "d3d9.deviceLocalStaticBuffers",    "True" },
+    }} },
     /* Hyperdimension Neptunia U: Action Unleashed */
     { R"(\\Neptunia\.exe$)", {{
       { "d3d9.forceAspectRatio",            "16:9" },
