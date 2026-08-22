@@ -13,6 +13,8 @@ compiler_args = [
   '-msse',
   '-msse2',
   '-msse3',
+  '-msse4.1',
+  '-msse4.2',
   '-mfpmath=sse',
   '-Wimplicit-fallthrough',
   # gcc
