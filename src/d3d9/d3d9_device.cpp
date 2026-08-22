@@ -8734,6 +8734,13 @@ namespace dxvk {
 
       if (lighting) {
         for (const auto& light : m_state.lights) {
+          // Bound before the write, not after it. Only lightCount lights were
+          // uploaded, so should this filter ever drift from the pre-count the
+          // loop must stop short rather than write into the region the DMA
+          // does not cover.
+          if (lightIdx == lightCount)
+            break;
+
           if (!light.isEnabled)
             continue;
 
@@ -8745,9 +8752,6 @@ namespace dxvk {
             m_state.transforms[GetTransformIndex(D3DTS_VIEW)],
             light.cosTheta,
             light.cosPhi);
-
-          if (lightIdx == lightCount)
-            break;
         }
       }
 

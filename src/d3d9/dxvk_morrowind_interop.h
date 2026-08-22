@@ -16,6 +16,12 @@ static constexpr uint32_t DXVK_MORROWIND_INTEROP_VERSION = 1;
 static constexpr uint64_t DXVK_MORROWIND_CAP_MSAA_DEPTH_RESOLVE = 1ull << 0;
 static constexpr uint64_t DXVK_MORROWIND_CAP_PPL_DRAW_V1 = 1ull << 1;
 static constexpr uint64_t DXVK_MORROWIND_CAP_PPL_DRAW_V2 = 1ull << 2;
+// Every path this renderer can reach consumes the expanded light limit, not
+// just the native packet. The client's engine patch is irreversible while the
+// lighting mode stays runtime-mutable, so authorization has to be stated
+// outright rather than inferred from the packet version: a build could speak
+// V2 packets while its ordinary fixed-function path still stopped at 8.
+static constexpr uint64_t DXVK_MORROWIND_CAP_EXPANDED_LIGHT_LIMIT = 1ull << 3;
 
 static constexpr uint32_t DXVK_MORROWIND_PPL_STRUCT_VERSION = 2;
 static constexpr uint32_t DXVK_MORROWIND_PPL_MAX_STAGES = 6;
@@ -116,6 +122,14 @@ static_assert(DXVK_MORROWIND_PPL_MAX_LIGHTS == 32,
     "Struct version 2 / CAP_PPL_DRAW_V2 is defined as the 32-light packet. "
     "Bump DXVK_MORROWIND_PPL_STRUCT_VERSION and add a new capability bit "
     "together with any change to the light count");
+
+// CAP_EXPANDED_LIGHT_LIMIT is advertised unconditionally, so this is what
+// makes that claim true. The ordinary fixed-function path has to reach the
+// same limit as the packet: the client can leave the native path at any time
+// through a keybind or a Lua call, and the engine patch does not come back.
+static_assert(DXVK_D3D9_MAX_ENABLED_LIGHTS == DXVK_MORROWIND_PPL_MAX_LIGHTS,
+    "Ordinary fixed-function lighting must reach the same limit as the native "
+    "packet before CAP_EXPANDED_LIGHT_LIMIT may be advertised");
 
 MIDL_INTERFACE("2ff12bfc-4622-4d9d-bcbf-1501f37e8aa3")
 IDxvkMorrowindInterop : public IUnknown {

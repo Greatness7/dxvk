@@ -628,8 +628,13 @@ namespace dxvk {
     // the V1 packet reaches the struct size/version rejection in DrawPplV1 and
     // falls back. The V2 bit reports the expanded packet, which this build also
     // requires the ordinary fixed-function path to support.
+    // The expanded-limit bit is separate from the packet version so that a
+    // client can authorize its irreversible engine patch on the renderer as a
+    // whole, not just on the native draw path. The static_asserts in
+    // dxvk_morrowind_interop.h are what let this build make that claim.
     return DXVK_MORROWIND_CAP_PPL_DRAW_V1
-         | DXVK_MORROWIND_CAP_PPL_DRAW_V2;
+         | DXVK_MORROWIND_CAP_PPL_DRAW_V2
+         | DXVK_MORROWIND_CAP_EXPANDED_LIGHT_LIMIT;
   }
 
   HRESULT STDMETHODCALLTYPE DxvkMorrowindPplInterop::DrawPplV1(
