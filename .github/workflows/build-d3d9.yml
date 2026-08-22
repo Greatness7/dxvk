@@ -49,6 +49,9 @@ jobs:
             -Denable_d3d11=false \
             build
           ninja -C build
+          # Upstream ships stripped binaries (package-release.sh);
+          # unstripped this DLL carries ~9 MB of DWARF.
+          i686-w64-mingw32-strip build/src/d3d9/d3d9.dll
 
     - name: Upload artifact
       uses: actions/upload-artifact@v7
