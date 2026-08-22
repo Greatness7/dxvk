@@ -531,7 +531,7 @@ namespace dxvk {
   };
 
   static_assert(sizeof(D3D9MorrowindPplStage) == 32);
-  static_assert(sizeof(D3D9MorrowindPplData) == 1056);
+  static_assert(sizeof(D3D9MorrowindPplData) == 1920);
   
   struct D3D9VBO {
     Com<D3D9VertexBuffer, false> vertexBuffer;

@@ -18,8 +18,8 @@
 layout(location = 0) PPL_NORMAL_INTERP in vec4 in_NormalFog;
 layout(location = 1) PPL_TEXCOORD_INTERP in vec4 in_Texcoord01;
 layout(location = 2) PPL_TEXCOORD_INTERP in vec4 in_Texcoord23;
-layout(location = 3) PPL_LIGHT_INTERP in vec4 in_LightVec[6];
-layout(location = 9) PPL_COLOR_INTERP in vec4 in_Color0;
+layout(location = 3) PPL_LIGHT_INTERP in vec4 in_ViewPosition;
+layout(location = 4) PPL_COLOR_INTERP in vec4 in_Color0;
 
 layout(location = 0) out vec4 out_Color0;
 
@@ -109,12 +109,10 @@ vec3 calculatePplPointLighting(vec3 normal) {
     vec3 result = vec3(0.0);
 
     for (uint light = 0u; light < ppl.lightSlotCount; light++) {
-        uint group = light / 4u;
-        uint lane = light & 3u;
         vec3 lightVector = vec3(
-            in_LightVec[group * 3u + 0u][lane],
-            in_LightVec[group * 3u + 1u][lane],
-            in_LightVec[group * 3u + 2u][lane]);
+            ppl.lightPosition[0][light],
+            ppl.lightPosition[1][light],
+            ppl.lightPosition[2][light]) - in_ViewPosition.xyz;
 
         float distanceSquared = dot(lightVector, lightVector);
         float lambert = clamp(dot(normal, lightVector) / sqrt(distanceSquared), 0.0, 1.0);

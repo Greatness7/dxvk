@@ -7457,12 +7457,13 @@ namespace dxvk {
      || draw.fogMode > 2u)
       return E_INVALIDARG;
 
-    if (draw.lightSlotCount != 0u
-     && draw.lightSlotCount != 4u
-     && draw.lightSlotCount != 8u)
+    // lightSlotCount is the exact packed point-light count. A lit draw may have
+    // zero point lights (sun-only or ambient-only), but an unlit draw may not
+    // carry any.
+    if (draw.lightSlotCount > DXVK_MORROWIND_PPL_MAX_LIGHTS)
       return E_INVALIDARG;
 
-    if ((draw.vertexMaterialMode == 0u) != (draw.lightSlotCount == 0u))
+    if (draw.vertexMaterialMode == 0u && draw.lightSlotCount != 0u)
       return E_INVALIDARG;
 
     const bool useSkinning = draw.flags & DXVK_MW_PPL_USE_SKINNING;

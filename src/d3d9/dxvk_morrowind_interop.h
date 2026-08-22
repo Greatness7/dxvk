@@ -9,14 +9,16 @@
 #include <unknwn.h>
 #include <d3d9.h>
 
+#include "dxvk_morrowind_limits.h"
+
 static constexpr uint32_t DXVK_MORROWIND_INTEROP_VERSION = 1;
 
 static constexpr uint64_t DXVK_MORROWIND_CAP_MSAA_DEPTH_RESOLVE = 1ull << 0;
 static constexpr uint64_t DXVK_MORROWIND_CAP_PPL_DRAW_V1 = 1ull << 1;
+static constexpr uint64_t DXVK_MORROWIND_CAP_PPL_DRAW_V2 = 1ull << 2;
 
-static constexpr uint32_t DXVK_MORROWIND_PPL_STRUCT_VERSION = 1;
+static constexpr uint32_t DXVK_MORROWIND_PPL_STRUCT_VERSION = 2;
 static constexpr uint32_t DXVK_MORROWIND_PPL_MAX_STAGES = 6;
-static constexpr uint32_t DXVK_MORROWIND_PPL_MAX_LIGHTS = 8;
 
 enum DxvkMorrowindPplFlags : uint32_t {
     DXVK_MW_PPL_USE_SKINNING       = 1u << 0,
@@ -60,6 +62,8 @@ struct DxvkMorrowindPplDrawV1 {
     uint32_t vertexMaterialMode;
     uint32_t fogMode;
     uint32_t activeStageCount;
+    // Exact packed point-light count, 0 through DXVK_MORROWIND_PPL_MAX_LIGHTS.
+    // Zero is valid for a lit sun/ambient-only draw.
     uint32_t lightSlotCount;
     uint32_t bumpmapStage;
     uint32_t texgenStage;
@@ -99,7 +103,7 @@ static_assert(std::is_standard_layout<DxvkMorrowindPplDrawV1>::value,
     "Morrowind PPL draw ABI must be standard layout");
 static_assert(sizeof(DxvkMorrowindPplStageV1) == 32,
     "Unexpected Morrowind PPL stage ABI size");
-static_assert(sizeof(DxvkMorrowindPplDrawV1) == 1092,
+static_assert(sizeof(DxvkMorrowindPplDrawV1) == 1956,
     "Unexpected Morrowind PPL draw ABI size");
 
 MIDL_INTERFACE("2ff12bfc-4622-4d9d-bcbf-1501f37e8aa3")

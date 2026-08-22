@@ -624,7 +624,12 @@ namespace dxvk {
   }
 
   uint64_t STDMETHODCALLTYPE DxvkMorrowindPplInterop::GetCapabilities() {
-    return DXVK_MORROWIND_CAP_PPL_DRAW_V1;
+    // The V1 bit still reports the method's presence, so a client built against
+    // the V1 packet reaches the struct size/version rejection in DrawPplV1 and
+    // falls back. The V2 bit reports the expanded packet, which this build also
+    // requires the ordinary fixed-function path to support.
+    return DXVK_MORROWIND_CAP_PPL_DRAW_V1
+         | DXVK_MORROWIND_CAP_PPL_DRAW_V2;
   }
 
   HRESULT STDMETHODCALLTYPE DxvkMorrowindPplInterop::DrawPplV1(

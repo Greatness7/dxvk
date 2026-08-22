@@ -43,8 +43,9 @@ layout(location = 11) out float out_Fog;
 
 
 #include "d3d9_fixed_function_common.glsl"
+#include "../dxvk_morrowind_limits.h"
 
-const uint MaxEnabledLights = 8;
+const uint MaxEnabledLights = uint(DXVK_D3D9_MAX_ENABLED_LIGHTS);
 
 struct D3D9ViewportInfo {
     vec4 inverseOffset;

@@ -1,9 +1,10 @@
 #extension GL_EXT_scalar_block_layout : require
 
 #include "d3d9_fixed_function_common.glsl"
+#include "../dxvk_morrowind_limits.h"
 
 const uint MorrowindPplMaxStages = 6u;
-const uint MorrowindPplMaxLights = 8u;
+const uint MorrowindPplMaxLights = uint(DXVK_MORROWIND_PPL_MAX_LIGHTS);
 
 const uint MorrowindPplUseSkinning      = 1u << 0;
 const uint MorrowindPplVertexColor      = 1u << 1;

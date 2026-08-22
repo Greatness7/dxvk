@@ -16,8 +16,8 @@ invariant gl_Position;
 layout(location = 0) out vec4 out_NormalFog;
 layout(location = 1) out vec4 out_Texcoord01;
 layout(location = 2) out vec4 out_Texcoord23;
-layout(location = 3) out vec4 out_LightVec[6];
-layout(location = 9) out vec4 out_Color0;
+layout(location = 3) out vec4 out_ViewPosition;
+layout(location = 4) out vec4 out_Color0;
 
 #include "d3d9_morrowind_ppl_common.glsl"
 
@@ -101,14 +101,7 @@ void main() {
     out_Texcoord23 = vec4(routed[2], routed[3]);
     out_Color0 = hasPplFlag(MorrowindPplVertexColor) ? in_Color0 : vec4(1.0);
 
-    for (uint group = 0u; group < 2u; group++) {
-        for (uint axis = 0u; axis < 3u; axis++) {
-            uint base = group * 4u;
-            out_LightVec[group * 3u + axis] = vec4(
-                ppl.lightPosition[axis][base + 0u],
-                ppl.lightPosition[axis][base + 1u],
-                ppl.lightPosition[axis][base + 2u],
-                ppl.lightPosition[axis][base + 3u]) - viewPosition[axis];
-        }
-    }
+    // The fragment shader reconstructs per-light vectors from this, so varying
+    // usage does not grow with the light limit.
+    out_ViewPosition = viewPosition;
 }

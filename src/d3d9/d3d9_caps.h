@@ -2,6 +2,8 @@
 
 #include "d3d9_include.h"
 
+#include "dxvk_morrowind_limits.h"
+
 namespace dxvk::caps {
 
   constexpr uint32_t MaxClipPlanes                = 6;
@@ -29,7 +31,7 @@ namespace dxvk::caps {
 
   constexpr uint32_t TextureStageCount            = MaxSimultaneousTextures;
 
-  constexpr uint32_t MaxEnabledLights             = 8;
+  constexpr uint32_t MaxEnabledLights             = DXVK_D3D9_MAX_ENABLED_LIGHTS;
 
   constexpr uint32_t MaxTexturesVS                = 4;
   constexpr uint32_t MaxTexturesPS                = 16;
