@@ -417,7 +417,6 @@ namespace dxvk {
 
     D3D9ViewportInfo ViewportInfo;
 
-    std::array<D3D9Light, caps::MaxEnabledLights> Lights;
     D3DMATERIAL9 Material;
     uint32_t GlobalAmbient;
     float TweenFactor;
@@ -455,7 +454,26 @@ namespace dxvk {
     uint8_t AmbientSource;
     uint8_t SpecularSource;
     uint8_t EmissiveSource;
+
+    // Lights are last so that an upload can stop after the active ones. Only
+    // the first LightCount entries are ever written or read; the descriptor
+    // still covers the whole array, so the untouched tail is in-bounds and
+    // merely undefined. Keep this member last, and mirrored last in the
+    // shader's scalar-layout block.
+    std::array<D3D9Light, caps::MaxEnabledLights> Lights;
   };
+
+  // Bytes that must be uploaded to cover the fixed part plus LightCount lights.
+  inline size_t D3D9FixedFunctionVSSize(uint32_t LightCount) {
+    return offsetof(D3D9FixedFunctionVS, Lights) + LightCount * sizeof(D3D9Light);
+  }
+
+  static_assert(offsetof(D3D9FixedFunctionVS, Lights)
+              + caps::MaxEnabledLights * sizeof(D3D9Light) == sizeof(D3D9FixedFunctionVS),
+    "Lights must remain the last member of D3D9FixedFunctionVS. The partial "
+    "upload in UpdateFixedFunctionVS stops after the active lights, and the "
+    "shader's scalar-layout block mirrors this order; a member added after "
+    "Lights would land in the region that is never uploaded");
 
   static constexpr uint32_t D3D9MaxVertexBlendTransformsHw = 8u;
   static constexpr uint32_t D3D9MaxVertexBlendTransformsSw = 256u;

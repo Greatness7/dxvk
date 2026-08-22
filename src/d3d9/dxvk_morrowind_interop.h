@@ -106,6 +106,17 @@ static_assert(sizeof(DxvkMorrowindPplStageV1) == 32,
 static_assert(sizeof(DxvkMorrowindPplDrawV1) == 1956,
     "Unexpected Morrowind PPL draw ABI size");
 
+// The packet layout is a function of the light count, but the client
+// negotiates on the capability bit and the struct version. A build that
+// changed the light count without bumping both would advertise a layout it
+// does not speak: the client authorizes the expanded engine patch from the
+// capability bit, then every packet fails the size check and renders through
+// the legacy path at 8 lights while the engine submits far more.
+static_assert(DXVK_MORROWIND_PPL_MAX_LIGHTS == 32,
+    "Struct version 2 / CAP_PPL_DRAW_V2 is defined as the 32-light packet. "
+    "Bump DXVK_MORROWIND_PPL_STRUCT_VERSION and add a new capability bit "
+    "together with any change to the light count");
+
 MIDL_INTERFACE("2ff12bfc-4622-4d9d-bcbf-1501f37e8aa3")
 IDxvkMorrowindInterop : public IUnknown {
     virtual uint32_t STDMETHODCALLTYPE GetInterfaceVersion() = 0;

@@ -96,12 +96,16 @@ struct D3D9FixedFunctionVS {
 
     D3D9ViewportInfo ViewportInfo;
 
-    D3D9Light Lights[MaxEnabledLights];
     D3DMATERIAL9 Material;
     uint GlobalAmbient;
     float TweenFactor;
 
     uint DataPrimitives[12];
+
+    // Must stay last, mirroring D3D9FixedFunctionVS in d3d9_state.h. The host
+    // uploads only the first lightCount() entries; the rest are in-bounds of
+    // the descriptor but undefined, so never read past lightCount().
+    D3D9Light Lights[MaxEnabledLights];
 };
 
 #define D3D9FF_VertexBlendMode uint

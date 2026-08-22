@@ -56,6 +56,26 @@ namespace dxvk {
     void* Alloc(VkDeviceSize size);
 
     /**
+     * \brief Allocates a region whose tail is left undefined
+     *
+     * Binds \c bindingSize bytes to the shader, but only uploads and
+     * consumes \c uploadSize. The remaining bytes are inside the bound
+     * descriptor range, so a shader may address them, but their contents
+     * are undefined and must never be read.
+     *
+     * The stride advances by \c uploadSize, so successive descriptor
+     * ranges overlap in their undefined tails. That is permitted for
+     * uniform buffers, and it keeps the stream copies contiguous so the
+     * coalescer in \ref SetupStreamCommand does not bridge a reserved
+     * gap and copy the skipped tail anyway.
+     *
+     * \param [in] uploadSize Bytes written by the caller and uploaded
+     * \param [in] bindingSize Bytes covered by the descriptor
+     * \returns Map pointer of the allocated region
+     */
+    void* AllocPartial(VkDeviceSize uploadSize, VkDeviceSize bindingSize);
+
+    /**
      * \brief Allocates typed data
      *
      * \param [in] count Number of items to allocate

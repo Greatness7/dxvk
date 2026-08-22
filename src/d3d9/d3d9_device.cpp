@@ -8692,7 +8692,33 @@ namespace dxvk {
       auto NormalMatrix = tryInverse(WorldView).value_or(Matrix4(1.0f));
       auto Projection   = m_state.transforms[GetTransformIndex(D3DTS_PROJECTION)];
 
-      auto data = GetConstantBuffer(CbvIndex::VSFixedFunction).AllocTyped<D3D9FixedFunctionVS>(1u);
+      bool vertexHasPositionT = m_state.vertexDecl != nullptr && m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasPositionT);
+      bool lighting    = m_state.renderStates[D3DRS_LIGHTING] != 0 && !vertexHasPositionT;
+
+      // Only the lights the shader will actually read are uploaded, so the
+      // count has to be known before the allocation. This filter must stay
+      // identical to the fill loop below, or the shader reads undefined slots.
+      uint32_t lightCount = 0;
+
+      if (lighting) {
+        for (const auto& light : m_state.lights) {
+          if (!light.isEnabled)
+            continue;
+
+          // D3D8/9 will allow lights with invalid types to be set and retrieved,
+          // and even enabled, however they won't affect overall lighting
+          if (unlikely(!light.light.Type || light.light.Type > D3DLIGHT_DIRECTIONAL))
+            continue;
+
+          if (++lightCount == caps::MaxEnabledLights)
+            break;
+        }
+      }
+
+      auto data = reinterpret_cast<D3D9FixedFunctionVS*>(
+        GetConstantBuffer(CbvIndex::VSFixedFunction).AllocPartial(
+          D3D9FixedFunctionVSSize(lightCount), sizeof(D3D9FixedFunctionVS)));
+
       data->WorldView    = WorldView;
       data->NormalMatrix = NormalMatrix;
       data->InverseView  = transpose(inverse(m_state.transforms[GetTransformIndex(D3DTS_VIEW)]));
@@ -8706,37 +8732,35 @@ namespace dxvk {
 
       uint32_t lightIdx = 0;
 
-      for (auto& light : m_state.lights) {
-        if (!light.isEnabled)
-          continue;
+      if (lighting) {
+        for (const auto& light : m_state.lights) {
+          if (!light.isEnabled)
+            continue;
 
-        // D3D8/9 will allow lights with invalid types to be set and retrieved,
-        // and even enabled, however they won't affect overall lighting
-        if (unlikely(!light.light.Type || light.light.Type > D3DLIGHT_DIRECTIONAL))
-          continue;
+          if (unlikely(!light.light.Type || light.light.Type > D3DLIGHT_DIRECTIONAL))
+            continue;
 
-        data->Lights[lightIdx++] = D3D9Light(
-          light.light,
-          m_state.transforms[GetTransformIndex(D3DTS_VIEW)],
-          light.cosTheta,
-          light.cosPhi);
+          data->Lights[lightIdx++] = D3D9Light(
+            light.light,
+            m_state.transforms[GetTransformIndex(D3DTS_VIEW)],
+            light.cosTheta,
+            light.cosPhi);
 
-        if (lightIdx == caps::MaxEnabledLights)
-          break;
+          if (lightIdx == lightCount)
+            break;
+        }
       }
 
       data->Material = m_state.material;
       data->GlobalAmbient = m_state.renderStates[D3DRS_AMBIENT];
       data->TweenFactor = bit::cast<float>(m_state.renderStates[D3DRS_TWEENFACTOR]);
 
-      bool vertexHasPositionT = m_state.vertexDecl != nullptr && m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasPositionT);
       data->VertexHasPositionT = vertexHasPositionT;
       data->VertexHasColor0    = m_state.vertexDecl != nullptr && m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasColor0);
       data->VertexHasColor1    = m_state.vertexDecl != nullptr && m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasColor1);
       data->VertexHasPointSize = m_state.vertexDecl != nullptr && m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasPointSize);
       data->VertexHasFog       = m_state.vertexDecl != nullptr && m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasFog);
 
-      bool lighting    = m_state.renderStates[D3DRS_LIGHTING] != 0 && !vertexHasPositionT;
       bool colorVertex = m_state.renderStates[D3DRS_COLORVERTEX] != 0;
       uint32_t mask    = (lighting && colorVertex)
                        ? (data->VertexHasColor0 ? D3DMCS_COLOR1 : D3DMCS_MATERIAL)
@@ -8754,8 +8778,9 @@ namespace dxvk {
       data->SpecularSource   = m_state.renderStates[D3DRS_SPECULARMATERIALSOURCE] & mask;
       data->EmissiveSource   = m_state.renderStates[D3DRS_EMISSIVEMATERIALSOURCE] & mask;
 
-      uint32_t lightCount = lightIdx;
-      data->LightCount       = lighting ? lightCount : 0;
+      // lightIdx is what the fill loop actually wrote; if it ever disagreed
+      // with the pre-count the shader would read past the uploaded region.
+      data->LightCount       = lightIdx;
 
       for (uint32_t i = 0; i < caps::MaxTextureBlendStages; i++) {
         uint32_t transformFlags = m_state.textureStages[i][DXVK_TSS_TEXTURETRANSFORMFLAGS] & ~(D3DTTFF_PROJECTED);

@@ -29,12 +29,24 @@ namespace dxvk {
 
 
   void* D3D9ConstantBuffer::Alloc(VkDeviceSize size) {
+    return AllocPartial(size, size);
+  }
+
+
+  void* D3D9ConstantBuffer::AllocPartial(VkDeviceSize uploadSize, VkDeviceSize bindingSize) {
     if (unlikely(!m_cpuBuffer))
       m_cpuSlice = CreateBuffer();
 
-    size = align(size, m_align);
+    uploadSize  = align(uploadSize, m_align);
+    bindingSize = align(bindingSize, m_align);
 
-    if (m_offset + size > m_size) {
+    if (bindingSize < uploadSize)
+      bindingSize = uploadSize;
+
+    // Wrapping is decided on the binding size so that the descriptor never
+    // reaches past the end of the buffer, even though only uploadSize of it
+    // holds defined data.
+    if (m_offset + bindingSize > m_size) {
       m_cpuSlice = m_cpuBuffer->allocateStorage();
 
       m_device->EmitCs([
@@ -42,30 +54,30 @@ namespace dxvk {
         cStages     = m_stages,
         cCpuBuffer  = m_cpuBuffer,
         cCpuSlice   = m_cpuSlice,
-        cSize       = size
+        cSize       = bindingSize
       ] (DxvkContext* ctx) mutable {
         ctx->invalidateBuffer(cCpuBuffer, std::move(cCpuSlice));
         ctx->bindUniformBufferRange(cStages, cBinding, 0u, cSize);
       });
 
-      SetupStreamCommand(0u, size, true);
+      SetupStreamCommand(0u, uploadSize, true);
 
-      m_offset = size;
+      m_offset = uploadSize;
       return m_cpuSlice->mapPtr();
     } else {
       m_device->EmitCs([
         cBinding  = uint32_t(m_kind),
         cStages   = m_stages,
         cOffset   = m_offset,
-        cSize     = size
+        cSize     = bindingSize
       ] (DxvkContext* ctx) {
         ctx->bindUniformBufferRange(cStages, cBinding, cOffset, cSize);
       });
 
-      SetupStreamCommand(m_offset, size, false);
+      SetupStreamCommand(m_offset, uploadSize, false);
 
       void* mapPtr = reinterpret_cast<char*>(m_cpuSlice->mapPtr()) + m_offset;
-      m_offset += size;
+      m_offset += uploadSize;
       return mapPtr;
     }
   }
