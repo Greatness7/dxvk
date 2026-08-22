@@ -2187,7 +2187,7 @@ namespace dxvk {
 
     auto& light = m_state.lights[Index];
     light.isValid = true;
-    light.light = *pLight;
+    light.setLight(*pLight);
 
     if (light.isEnabled)
       m_dirty.set(D3D9DeviceDirtyFlag::FFVertexData);
@@ -4649,7 +4649,13 @@ namespace dxvk {
     if (unlikely(ShouldRecord()))
       return m_recorder->SetStateTransform(idx, pMatrix);
 
-    m_state.transforms[idx] = ConvertMatrix(pMatrix);
+    const Matrix4 transform = ConvertMatrix(pMatrix);
+    const bool dirty = m_state.transforms[idx] != transform;
+
+    m_state.transforms[idx] = transform;
+
+    if (!dirty)
+      return D3D_OK;
 
     m_dirty.set(D3D9DeviceDirtyFlag::FFVertexData);
 
@@ -8229,7 +8235,11 @@ namespace dxvk {
         if (unlikely(!light.light.Type || light.light.Type > D3DLIGHT_DIRECTIONAL))
           continue;
 
-        data->Lights[lightIdx++] = D3D9Light(light.light, m_state.transforms[GetTransformIndex(D3DTS_VIEW)]);
+        data->Lights[lightIdx++] = D3D9Light(
+          light.light,
+          m_state.transforms[GetTransformIndex(D3DTS_VIEW)],
+          light.cosTheta,
+          light.cosPhi);
 
         if (lightIdx == caps::MaxEnabledLights)
           break;

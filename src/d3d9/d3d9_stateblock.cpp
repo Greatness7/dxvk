@@ -193,7 +193,7 @@ namespace dxvk {
 
     auto& light = m_state.lights[Index];
     light.isValid = true;
-    light.light = *pLight;
+    light.setLight(*pLight);
 
     m_captures.flags.set(D3D9CapturedStateFlag::Lights);
     return D3D_OK;

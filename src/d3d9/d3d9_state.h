@@ -341,7 +341,11 @@ namespace dxvk {
   };
 
   struct D3D9Light {
-    D3D9Light(const D3DLIGHT9& light, Matrix4 viewMtx)
+    D3D9Light(
+      const D3DLIGHT9& light,
+            Matrix4     viewMtx,
+            float       cosTheta,
+            float       cosPhi)
       : Diffuse      ( Vector4(light.Diffuse.r,  light.Diffuse.g,  light.Diffuse.b,  light.Diffuse.a) )
       , Specular     ( Vector4(light.Specular.r, light.Specular.g, light.Specular.b, light.Specular.a) )
       , Ambient      ( Vector4(light.Ambient.r,  light.Ambient.g,  light.Ambient.b,  light.Ambient.a) )
@@ -353,8 +357,8 @@ namespace dxvk {
       , Attenuation0 ( light.Attenuation0 )
       , Attenuation1 ( light.Attenuation1 )
       , Attenuation2 ( light.Attenuation2 )
-      , Theta        ( cosf(light.Theta / 2.0f) )
-      , Phi          ( cosf(light.Phi / 2.0f) ) { }
+      , Theta        ( cosTheta )
+      , Phi          ( cosPhi ) { }
 
     Vector4 Diffuse;
     Vector4 Specular;
@@ -388,9 +392,17 @@ namespace dxvk {
   };
 
   struct D3D9LightState {
+    void setLight(const D3DLIGHT9& newLight) {
+      light = newLight;
+      cosTheta = cosf(newLight.Theta / 2.0f);
+      cosPhi = cosf(newLight.Phi / 2.0f);
+    }
+
     bool isValid = false;
     bool isEnabled = false;
     D3DLIGHT9 light = DefaultLight;
+    float cosTheta = 1.0f;
+    float cosPhi = 1.0f;
   };
 
   struct D3D9FixedFunctionVS {
