@@ -59,6 +59,7 @@ namespace dxvk {
     , m_submissionFence    ( new sync::Fence() )
     , m_flushTracker       ( GetMaxFlushType() )
     , m_d3d9Interop        ( this )
+    , m_morrowindInterop    ( this )
     , m_d3d9On12Args       ( pAdapter->Get9On12Args() )
     , m_d3d9On12           ( this )
     , m_legacyD3DBridge    ( this )
@@ -194,6 +195,11 @@ namespace dxvk {
 
     if (riid == __uuidof(ID3D9VkInteropDevice)) {
       *ppvObject = ref(&m_d3d9Interop);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IDxvkMorrowindInterop)) {
+      *ppvObject = ref(&m_morrowindInterop);
       return S_OK;
     }
 

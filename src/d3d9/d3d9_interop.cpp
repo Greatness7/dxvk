@@ -3,6 +3,7 @@
 #include "d3d9_common_texture.h"
 #include "d3d9_device.h"
 #include "d3d9_texture.h"
+#include "d3d9_surface.h"
 #include "d3d9_buffer.h"
 #include "d3d9_initializer.h"
 
@@ -372,6 +373,229 @@ namespace dxvk {
       Logger::err(e.message());
       return D3DERR_OUTOFVIDEOMEMORY;
     }
+  }
+
+  ////////////////////////////////
+  // Morrowind Interop
+  ///////////////////////////////
+
+  DxvkMorrowindInterop::DxvkMorrowindInterop(
+          D3D9DeviceEx*         pInterface)
+    : m_device(pInterface) {
+
+  }
+
+  DxvkMorrowindInterop::~DxvkMorrowindInterop() {
+
+  }
+
+  ULONG STDMETHODCALLTYPE DxvkMorrowindInterop::AddRef() {
+    return m_device->AddRef();
+  }
+
+  ULONG STDMETHODCALLTYPE DxvkMorrowindInterop::Release() {
+    return m_device->Release();
+  }
+
+  HRESULT STDMETHODCALLTYPE DxvkMorrowindInterop::QueryInterface(
+          REFIID                riid,
+          void**                ppvObject) {
+    return m_device->QueryInterface(riid, ppvObject);
+  }
+
+  uint32_t STDMETHODCALLTYPE DxvkMorrowindInterop::GetInterfaceVersion() {
+    return DXVK_MORROWIND_INTEROP_VERSION;
+  }
+
+  uint64_t DxvkMorrowindInterop::GetCapabilitiesLocked() const {
+    D3D9Surface* sourceSurface = m_device->m_autoDepthStencil.ptr();
+
+    if (!sourceSurface)
+      return 0;
+
+    D3D9CommonTexture* sourceTexture = sourceSurface->GetCommonTexture();
+    const Rc<DxvkImage> sourceImage = sourceTexture->GetImage();
+
+    if (!sourceImage)
+      return 0;
+
+    const DxvkImageCreateInfo& sourceInfo = sourceImage->info();
+    const DxvkFormatInfo* formatInfo = sourceImage->formatInfo();
+
+    if (!(formatInfo->aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT)
+     || sourceInfo.sampleCount == VK_SAMPLE_COUNT_1_BIT
+     || !(sourceInfo.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
+      return 0;
+
+    const auto& properties = m_device->GetDXVKDevice()->properties().vk12;
+    const bool hasStencil =
+      formatInfo->aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT;
+    const bool supportsMin =
+      properties.supportedDepthResolveModes & VK_RESOLVE_MODE_MIN_BIT;
+    const bool supportsIndependentNone =
+      !hasStencil || properties.independentResolveNone;
+
+    return supportsMin && supportsIndependentNone
+      ? DXVK_MORROWIND_CAP_MSAA_DEPTH_RESOLVE
+      : 0;
+  }
+
+  uint64_t STDMETHODCALLTYPE DxvkMorrowindInterop::GetCapabilities() {
+    D3D9DeviceLock lock = m_device->LockDevice();
+    return GetCapabilitiesLocked();
+  }
+
+  static bool GetMorrowindInteropSurface(
+          IDirect3DSurface9*    surfaceInterface,
+          D3D9Surface*&         surface,
+          D3D9CommonTexture*&   texture) {
+    ID3D9VkInteropTexture* interop = nullptr;
+
+    if (FAILED(surfaceInterface->QueryInterface(
+        __uuidof(ID3D9VkInteropTexture),
+        reinterpret_cast<void**>(&interop))))
+      return false;
+
+    texture = static_cast<D3D9VkInteropTexture*>(interop)->GetCommonTexture();
+    interop->Release();
+
+    if (!texture)
+      return false;
+
+    surface = static_cast<D3D9Surface*>(surfaceInterface);
+    return true;
+  }
+
+  HRESULT STDMETHODCALLTYPE DxvkMorrowindInterop::ResolveDepthMinV1(
+          IDirect3DSurface9*    sourceMsaaDepth,
+          IDirect3DSurface9*    destinationIntz) {
+    D3D9DeviceLock lock = m_device->LockDevice();
+
+    if (!sourceMsaaDepth || !destinationIntz
+     || sourceMsaaDepth == destinationIntz)
+      return D3DERR_INVALIDCALL;
+
+    D3D9Surface* sourceSurface = nullptr;
+    D3D9Surface* destinationSurface = nullptr;
+    D3D9CommonTexture* sourceTexture = nullptr;
+    D3D9CommonTexture* destinationTexture = nullptr;
+
+    if (!GetMorrowindInteropSurface(
+          sourceMsaaDepth, sourceSurface, sourceTexture)
+     || !GetMorrowindInteropSurface(
+          destinationIntz, destinationSurface, destinationTexture))
+      return D3DERR_INVALIDCALL;
+
+    if (sourceTexture->Device() != m_device
+     || destinationTexture->Device() != m_device)
+      return D3DERR_INVALIDCALL;
+
+    if (sourceSurface != m_device->m_autoDepthStencil.ptr()
+     || sourceSurface != m_device->m_state.depthStencil.ptr())
+      return D3DERR_INVALIDCALL;
+
+    const D3D9_COMMON_TEXTURE_DESC* sourceDesc = sourceTexture->Desc();
+    const D3D9_COMMON_TEXTURE_DESC* destinationDesc = destinationTexture->Desc();
+
+    if (sourceDesc->Pool != D3DPOOL_DEFAULT
+     || destinationDesc->Pool != D3DPOOL_DEFAULT
+     || !(sourceDesc->Usage & D3DUSAGE_DEPTHSTENCIL)
+     || !(destinationDesc->Usage & D3DUSAGE_DEPTHSTENCIL))
+      return D3DERR_INVALIDCALL;
+
+    if (sourceSurface->GetBaseTexture() != nullptr
+     || destinationSurface->GetBaseTexture() == nullptr
+     || sourceSurface->GetMipLevel() != 0
+     || sourceSurface->GetFace() != 0
+     || sourceSurface->GetSubresource() != 0
+     || destinationSurface->GetMipLevel() != 0
+     || destinationSurface->GetFace() != 0
+     || destinationSurface->GetSubresource() != 0)
+      return D3DERR_INVALIDCALL;
+
+    if (sourceDesc->MipLevels != 1
+     || sourceDesc->ArraySize != 1
+     || sourceDesc->Depth != 1
+     || sourceDesc->MultiSample == D3DMULTISAMPLE_NONE
+     || destinationDesc->Format != D3D9Format::INTZ
+     || destinationDesc->MipLevels != 1
+     || destinationDesc->ArraySize != 1
+     || destinationDesc->Depth != 1
+     || destinationDesc->MultiSample != D3DMULTISAMPLE_NONE)
+      return D3DERR_INVALIDCALL;
+
+    const Rc<DxvkImage> sourceImage = sourceTexture->GetImage();
+    const Rc<DxvkImage> destinationImage = destinationTexture->GetImage();
+
+    if (!sourceImage || !destinationImage)
+      return D3DERR_INVALIDCALL;
+
+    const DxvkImageCreateInfo& sourceInfo = sourceImage->info();
+    const DxvkImageCreateInfo& destinationInfo = destinationImage->info();
+
+    if (sourceInfo.sampleCount == VK_SAMPLE_COUNT_1_BIT
+     || destinationInfo.sampleCount != VK_SAMPLE_COUNT_1_BIT
+     || sourceInfo.mipLevels != 1
+     || destinationInfo.mipLevels != 1
+     || sourceInfo.numLayers != 1
+     || destinationInfo.numLayers != 1
+     || !(sourceInfo.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+     || !(destinationInfo.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
+      return D3DERR_INVALIDCALL;
+
+    if (sourceInfo.extent.width != destinationInfo.extent.width
+     || sourceInfo.extent.height != destinationInfo.extent.height
+     || sourceInfo.extent.depth != destinationInfo.extent.depth
+     || sourceInfo.extent.width != sourceDesc->Width
+     || sourceInfo.extent.height != sourceDesc->Height
+     || destinationInfo.extent.width != destinationDesc->Width
+     || destinationInfo.extent.height != destinationDesc->Height)
+      return D3DERR_INVALIDCALL;
+
+    if (sourceInfo.format != destinationInfo.format)
+      return D3DERR_NOTAVAILABLE;
+
+    const VkImageAspectFlags aspectMask =
+      sourceImage->formatInfo()->aspectMask;
+
+    if (!(aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT))
+      return D3DERR_INVALIDCALL;
+
+    VkImageResolve region = { };
+    region.srcSubresource = VkImageSubresourceLayers {
+      aspectMask, 0, 0, 1 };
+    region.srcOffset = VkOffset3D { 0, 0, 0 };
+    region.dstSubresource = VkImageSubresourceLayers {
+      aspectMask, 0, 0, 1 };
+    region.dstOffset = VkOffset3D { 0, 0, 0 };
+    region.extent = sourceImage->mipLevelExtent(0);
+
+    if (!sourceImage->isFullSubresource(
+          region.srcSubresource, region.extent)
+     || !destinationImage->isFullSubresource(
+          region.dstSubresource, region.extent))
+      return D3DERR_INVALIDCALL;
+
+    if (!(GetCapabilitiesLocked()
+        & DXVK_MORROWIND_CAP_MSAA_DEPTH_RESOLVE))
+      return D3DERR_NOTAVAILABLE;
+
+    m_device->EmitCs([
+      cSourceImage      = sourceImage,
+      cDestinationImage = destinationImage,
+      cRegion           = region,
+      cFormat           = sourceInfo.format
+    ] (DxvkContext* ctx) {
+      ctx->resolveImage(
+        cDestinationImage,
+        cSourceImage,
+        cRegion,
+        cFormat,
+        VK_RESOLVE_MODE_MIN_BIT,
+        VK_RESOLVE_MODE_NONE);
+    });
+
+    return S_OK;
   }
 
   D3D9VkExtInterface::D3D9VkExtInterface(D3D9InterfaceEx *pInterface)

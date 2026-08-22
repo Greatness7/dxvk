@@ -228,6 +228,7 @@ namespace dxvk {
     friend class D3D9UserDefinedAnnotation;
     friend class DxvkLegacyD3DDeviceBridge;
     friend D3D9VkInteropDevice;
+    friend class DxvkMorrowindInterop;
 
     using CbvIndex = D3D9ShaderResourceMapping::CbvIndex;
   public:
@@ -1692,6 +1693,7 @@ namespace dxvk {
     D3D9SpecData                    m_specData = {};
 
     D3D9VkInteropDevice             m_d3d9Interop;
+    DxvkMorrowindInterop             m_morrowindInterop;
     D3D9ON12_ARGS                   m_d3d9On12Args = { };
     D3D9On12                        m_d3d9On12;
 

@@ -2,6 +2,7 @@
 
 #include "d3d9_interfaces.h"
 #include "d3d9_multithread.h"
+#include "dxvk_morrowind_interop.h"
 
 #include "../dxvk/dxvk_extension_provider.h"
 
@@ -139,6 +140,39 @@ namespace dxvk {
 
     D3D9DeviceEx*  m_device;
     D3D9DeviceLock m_lock;
+
+  };
+
+  class DxvkMorrowindInterop final : public IDxvkMorrowindInterop {
+
+  public:
+
+    DxvkMorrowindInterop(
+            D3D9DeviceEx*         pInterface);
+
+    ~DxvkMorrowindInterop();
+
+    ULONG STDMETHODCALLTYPE AddRef();
+
+    ULONG STDMETHODCALLTYPE Release();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(
+            REFIID                riid,
+            void**                ppvObject);
+
+    uint32_t STDMETHODCALLTYPE GetInterfaceVersion();
+
+    uint64_t STDMETHODCALLTYPE GetCapabilities();
+
+    HRESULT STDMETHODCALLTYPE ResolveDepthMinV1(
+            IDirect3DSurface9*    sourceMsaaDepth,
+            IDirect3DSurface9*    destinationIntz);
+
+  private:
+
+    uint64_t GetCapabilitiesLocked() const;
+
+    D3D9DeviceEx* m_device;
 
   };
 
