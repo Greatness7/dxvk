@@ -176,6 +176,34 @@ namespace dxvk {
 
   };
 
+  class DxvkMorrowindPplInterop final : public IDxvkMorrowindPplInterop1 {
+
+  public:
+
+    DxvkMorrowindPplInterop(
+            D3D9DeviceEx*         pInterface);
+
+    ~DxvkMorrowindPplInterop();
+
+    ULONG STDMETHODCALLTYPE AddRef();
+
+    ULONG STDMETHODCALLTYPE Release();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(
+            REFIID                riid,
+            void**                ppvObject);
+
+    uint64_t STDMETHODCALLTYPE GetCapabilities();
+
+    HRESULT STDMETHODCALLTYPE DrawPplV1(
+      const DxvkMorrowindPplDrawV1* draw);
+
+  private:
+
+    D3D9DeviceEx* m_device;
+
+  };
+
   class D3D9VkExtInterface final : public ID3D9VkExtInterface {
 
   public:

@@ -72,6 +72,39 @@ namespace dxvk {
   };
 
 
+  class D3D9MorrowindPplShaderModuleSet : public RcObject {
+    static constexpr uint32_t SamplerSet = 0u;
+    static constexpr uint32_t SrvSet = 1u;
+    static constexpr uint32_t CbvSet = 2u;
+    static constexpr uint32_t SpecDataSet = 3u;
+  public:
+
+    D3D9MorrowindPplShaderModuleSet() = delete;
+
+    explicit D3D9MorrowindPplShaderModuleSet(D3D9DeviceEx* pDevice);
+
+    template<D3D9ShaderType Stage>
+    Rc<DxvkShader> GetShader() {
+      return Stage == D3D9ShaderType::VertexShader ? m_vs : m_fs;
+    }
+
+  private:
+
+    Rc<DxvkShader> m_vs;
+    Rc<DxvkShader> m_fs;
+
+    static Rc<DxvkShader> buildVs();
+    static Rc<DxvkShader> buildFs(D3D9DeviceEx* pDevice);
+
+    constexpr static uint32_t GetPushSamplerOffset(uint32_t samplerIndex) {
+      return MaxSharedPushDataSize
+        + sizeof(D3D9FfpsPushData)
+        + sizeof(uint16_t) * samplerIndex;
+    }
+
+  };
+
+
   inline const D3D9InputSignature& GetFixedFunctionIsgn() {
     extern D3D9InputSignature g_ffIsgn;
 

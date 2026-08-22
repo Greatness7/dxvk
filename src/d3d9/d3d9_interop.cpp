@@ -598,6 +598,49 @@ namespace dxvk {
     return S_OK;
   }
 
+
+  DxvkMorrowindPplInterop::DxvkMorrowindPplInterop(
+          D3D9DeviceEx*         pInterface)
+    : m_device(pInterface) {
+
+  }
+
+  DxvkMorrowindPplInterop::~DxvkMorrowindPplInterop() {
+
+  }
+
+  ULONG STDMETHODCALLTYPE DxvkMorrowindPplInterop::AddRef() {
+    return m_device->AddRef();
+  }
+
+  ULONG STDMETHODCALLTYPE DxvkMorrowindPplInterop::Release() {
+    return m_device->Release();
+  }
+
+  HRESULT STDMETHODCALLTYPE DxvkMorrowindPplInterop::QueryInterface(
+          REFIID                riid,
+          void**                ppvObject) {
+    return m_device->QueryInterface(riid, ppvObject);
+  }
+
+  uint64_t STDMETHODCALLTYPE DxvkMorrowindPplInterop::GetCapabilities() {
+    return DXVK_MORROWIND_CAP_PPL_DRAW_V1;
+  }
+
+  HRESULT STDMETHODCALLTYPE DxvkMorrowindPplInterop::DrawPplV1(
+          const DxvkMorrowindPplDrawV1* draw) {
+    if (!draw)
+      return E_POINTER;
+
+    if (draw->structSize != sizeof(DxvkMorrowindPplDrawV1)
+     || draw->structVersion != DXVK_MORROWIND_PPL_STRUCT_VERSION)
+      return E_INVALIDARG;
+
+    D3D9DeviceLock lock = m_device->LockDevice();
+    DxvkMorrowindPplDrawV1 packet = *draw;
+    return m_device->DrawMorrowindPpl(packet);
+  }
+
   D3D9VkExtInterface::D3D9VkExtInterface(D3D9InterfaceEx *pInterface)
     : m_interface(pInterface) {
 

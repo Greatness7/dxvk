@@ -6,6 +6,7 @@
 #include "d3d9_shader.h"
 #include "d3d9_vertex_declaration.h"
 #include "d3d9_buffer.h"
+#include "dxvk_morrowind_interop.h"
 
 #include "../util/util_matrix.h"
 
@@ -477,6 +478,60 @@ namespace dxvk {
       float BumpEnvLOffset;
     } Stages[8];
   };
+
+  struct D3D9MorrowindPplStage {
+    uint32_t colorOp;
+    uint32_t colorArg1;
+    uint32_t colorArg2;
+    uint32_t colorArg0;
+    uint32_t texcoordIndex;
+    uint32_t texcoordGen;
+    uint32_t flags;
+    uint32_t reserved;
+  };
+
+  struct alignas(16) D3D9MorrowindPplData {
+    uint32_t flags;
+    uint32_t uvSetCount;
+    uint32_t vertexBlendState;
+    uint32_t vertexMaterialMode;
+    uint32_t fogMode;
+    uint32_t activeStageCount;
+    uint32_t lightSlotCount;
+    uint32_t bumpmapStage;
+    uint32_t texgenStage;
+
+    D3D9MorrowindPplStage stages[DXVK_MORROWIND_PPL_MAX_STAGES];
+
+    float projection[16];
+    float worldView[4][16];
+    float texgenTransform[16];
+
+    float materialDiffuse[4];
+    float materialAmbient[4];
+    float materialEmissive[4];
+
+    float sceneAmbient[4];
+    float sunDiffuse[4];
+    float sunDirection[4];
+
+    float lightDiffuse[DXVK_MORROWIND_PPL_MAX_LIGHTS][4];
+    float lightAmbient[DXVK_MORROWIND_PPL_MAX_LIGHTS];
+    float lightPosition[3][DXVK_MORROWIND_PPL_MAX_LIGHTS];
+    float lightFalloffQuadratic[DXVK_MORROWIND_PPL_MAX_LIGHTS];
+    float lightFalloffConstant;
+
+    float fogColor[4];
+    float nearFogStart;
+    float nearFogRange;
+
+    float bumpMatrix[4];
+    float bumpLumiScaleBias[2];
+    uint32_t reserved[2];
+  };
+
+  static_assert(sizeof(D3D9MorrowindPplStage) == 32);
+  static_assert(sizeof(D3D9MorrowindPplData) == 1056);
   
   struct D3D9VBO {
     Com<D3D9VertexBuffer, false> vertexBuffer;

@@ -200,6 +200,9 @@ namespace dxvk {
       case Kind::PSStaticConstants:
         return VK_SHADER_STAGE_FRAGMENT_BIT;
 
+      case Kind::MorrowindPpl:
+        return VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
       case Kind::Count:
         break;
     }

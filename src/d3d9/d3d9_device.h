@@ -229,6 +229,7 @@ namespace dxvk {
     friend class DxvkLegacyD3DDeviceBridge;
     friend D3D9VkInteropDevice;
     friend class DxvkMorrowindInterop;
+    friend class DxvkMorrowindPplInterop;
 
     using CbvIndex = D3D9ShaderResourceMapping::CbvIndex;
   public:
@@ -1031,6 +1032,16 @@ namespace dxvk {
 
     void PrepareDraw(D3DPRIMITIVETYPE PrimitiveType, bool UploadVBOs, bool UploadIBOs);
 
+    HRESULT DrawMorrowindPpl(const DxvkMorrowindPplDrawV1& draw);
+    HRESULT ValidateMorrowindPpl(const DxvkMorrowindPplDrawV1& draw) const;
+    void PrepareMorrowindPplDraw(
+      D3DPRIMITIVETYPE PrimitiveType,
+      bool UploadVBOs,
+      bool UploadIBO,
+      const D3D9MorrowindPplData& data);
+    void BindMorrowindPplShaders();
+    void RestoreShadersAfterMorrowindPpl();
+
     void EnsureSamplerLimit();
 
     template <D3D9ShaderType ShaderStage>
@@ -1581,6 +1592,8 @@ namespace dxvk {
     D3D9FormatHelper*               m_converter   = nullptr;
 
     D3D9FFShaderModuleSet           m_ffModules;
+    D3D9MorrowindPplShaderModuleSet m_morrowindPplModules;
+    bool                            m_morrowindPplShadersBound = false;
     D3D9SWVPEmulator                m_swvpEmulator;
 
     Com<D3D9StateBlock, false>      m_recorder;
@@ -1694,6 +1707,7 @@ namespace dxvk {
 
     D3D9VkInteropDevice             m_d3d9Interop;
     DxvkMorrowindInterop             m_morrowindInterop;
+    DxvkMorrowindPplInterop          m_morrowindPplInterop;
     D3D9ON12_ARGS                   m_d3d9On12Args = { };
     D3D9On12                        m_d3d9On12;
 

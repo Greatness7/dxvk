@@ -59,6 +59,7 @@ namespace dxvk {
       VSDynamicConstants      = 4u,
       PSShared                = 5u,
       PSStaticConstants       = 6u,
+      MorrowindPpl            = 7u,
 
       Count
     };

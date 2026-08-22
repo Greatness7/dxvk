@@ -49,6 +49,7 @@ namespace dxvk {
     , m_memoryAllocator    ( )
     , m_shaderAllocator    ( )
     , m_ffModules          ( this )
+    , m_morrowindPplModules( this )
     , m_shaderModules      ( new D3D9ShaderModuleSet )
     , m_stagingBuffer      ( dxvkDevice, StagingBufferSize )
     , m_stagingBufferFence ( new sync::Fence() )
@@ -60,6 +61,7 @@ namespace dxvk {
     , m_flushTracker       ( GetMaxFlushType() )
     , m_d3d9Interop        ( this )
     , m_morrowindInterop    ( this )
+    , m_morrowindPplInterop ( this )
     , m_d3d9On12Args       ( pAdapter->Get9On12Args() )
     , m_d3d9On12           ( this )
     , m_legacyD3DBridge    ( this )
@@ -200,6 +202,11 @@ namespace dxvk {
 
     if (riid == __uuidof(IDxvkMorrowindInterop)) {
       *ppvObject = ref(&m_morrowindInterop);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IDxvkMorrowindPplInterop1)) {
+      *ppvObject = ref(&m_morrowindPplInterop);
       return S_OK;
     }
 
@@ -3559,6 +3566,11 @@ namespace dxvk {
     if (shader == m_state.vertexShader.ptr())
       return D3D_OK;
 
+    // Restore both stages before we rebind this one. Clearing the flag here
+    // without restoring would strand the native PPL pixel shader on the
+    // context, and PrepareDraw would then skip restoration permanently.
+    RestoreShadersAfterMorrowindPpl();
+
     auto* oldShader = GetCommonShader(m_state.vertexShader);
     auto* newShader = GetCommonShader(shader);
 
@@ -3916,6 +3928,11 @@ namespace dxvk {
 
     if (shader == m_state.pixelShader.ptr())
       return D3D_OK;
+
+    // Restore both stages before we rebind this one. Clearing the flag here
+    // without restoring would strand the native PPL vertex shader on the
+    // context, and PrepareDraw would then skip restoration permanently.
+    RestoreShadersAfterMorrowindPpl();
 
     auto* oldShader = GetCommonShader(m_state.pixelShader);
     auto* newShader = GetCommonShader(shader);
@@ -7413,7 +7430,463 @@ namespace dxvk {
   }
 
 
+  HRESULT D3D9DeviceEx::ValidateMorrowindPpl(
+          const DxvkMorrowindPplDrawV1& draw) const {
+    constexpr uint32_t supportedFlags =
+        DXVK_MW_PPL_USE_SKINNING
+      | DXVK_MW_PPL_VERTEX_COLOR
+      | DXVK_MW_PPL_USE_BUMPMAP
+      | DXVK_MW_PPL_USE_TEXGEN
+      | DXVK_MW_PPL_PROJECTIVE_TEXGEN;
+
+    if (draw.structSize != sizeof(draw)
+     || draw.structVersion != DXVK_MORROWIND_PPL_STRUCT_VERSION
+     || draw.reserved0 != 0u
+     || draw.reserved1[0] != 0u
+     || draw.reserved1[1] != 0u
+     || (draw.flags & ~supportedFlags) != 0u)
+      return E_INVALIDARG;
+
+    if (draw.primitiveType < D3DPT_POINTLIST
+     || draw.primitiveType > D3DPT_TRIANGLEFAN
+     || draw.primitiveCount == 0u
+     || draw.vertexCount == 0u
+     || draw.activeStageCount > DXVK_MORROWIND_PPL_MAX_STAGES
+     || draw.uvSetCount > 4u
+     || draw.vertexMaterialMode > 3u
+     || draw.fogMode > 2u)
+      return E_INVALIDARG;
+
+    if (draw.lightSlotCount != 0u
+     && draw.lightSlotCount != 4u
+     && draw.lightSlotCount != 8u)
+      return E_INVALIDARG;
+
+    if ((draw.vertexMaterialMode == 0u) != (draw.lightSlotCount == 0u))
+      return E_INVALIDARG;
+
+    const bool useSkinning = draw.flags & DXVK_MW_PPL_USE_SKINNING;
+    if ((useSkinning && (draw.vertexBlendState < 1u || draw.vertexBlendState > 3u))
+     || (!useSkinning && draw.vertexBlendState != 0u))
+      return D3DERR_NOTAVAILABLE;
+
+    const bool useBumpmap = draw.flags & DXVK_MW_PPL_USE_BUMPMAP;
+    if (useBumpmap) {
+      if (draw.bumpmapStage >= draw.activeStageCount
+       || draw.bumpmapStage + 1u >= draw.activeStageCount)
+        return E_INVALIDARG;
+    } else if (draw.bumpmapStage != 0u) {
+      return E_INVALIDARG;
+    }
+
+    const bool useTexgen = draw.flags & DXVK_MW_PPL_USE_TEXGEN;
+    const bool projectiveTexgen = draw.flags & DXVK_MW_PPL_PROJECTIVE_TEXGEN;
+    if (projectiveTexgen && !useTexgen)
+      return E_INVALIDARG;
+
+    if (useTexgen) {
+      const uint32_t totalOutputCoords =
+        draw.uvSetCount + (projectiveTexgen ? 2u : 1u);
+      if (draw.texgenStage >= draw.activeStageCount || totalOutputCoords > 4u)
+        return D3DERR_NOTAVAILABLE;
+    } else if (draw.texgenStage != 0u) {
+      return E_INVALIDARG;
+    }
+
+    auto isSupportedArg = [] (uint32_t arg) {
+      return arg == D3DTA_DIFFUSE
+          || arg == D3DTA_CURRENT
+          || arg == D3DTA_TEXTURE;
+    };
+
+    auto isSupportedOp = [] (uint32_t op) {
+      switch (op) {
+        case D3DTOP_SELECTARG1:
+        case D3DTOP_SELECTARG2:
+        case D3DTOP_MODULATE:
+        case D3DTOP_MODULATE2X:
+        case D3DTOP_MODULATE4X:
+        case D3DTOP_ADD:
+        case D3DTOP_ADDSIGNED:
+        case D3DTOP_ADDSIGNED2X:
+        case D3DTOP_SUBTRACT:
+        case D3DTOP_BLENDDIFFUSEALPHA:
+        case D3DTOP_BLENDTEXTUREALPHA:
+        case D3DTOP_BUMPENVMAP:
+        case D3DTOP_BUMPENVMAPLUMINANCE:
+        case D3DTOP_DOTPRODUCT3:
+        case D3DTOP_MULTIPLYADD:
+          return true;
+        default:
+          return false;
+      }
+    };
+
+    uint32_t texgenCount = 0u;
+    for (uint32_t i = 0u; i < DXVK_MORROWIND_PPL_MAX_STAGES; i++) {
+      const auto& stage = draw.stages[i];
+
+      if (stage.reserved != 0u
+       || (stage.flags & ~(DXVK_MW_STAGE_ALPHA_MATCHES_COLOR
+                         | DXVK_MW_STAGE_ALPHA_SELECT_ARG1)) != 0u)
+        return E_INVALIDARG;
+
+      if (i >= draw.activeStageCount) {
+        const DxvkMorrowindPplStageV1 empty = { };
+        if (std::memcmp(&stage, &empty, sizeof(stage)) != 0)
+          return E_INVALIDARG;
+        continue;
+      }
+
+      if (!isSupportedOp(stage.colorOp)
+       || !isSupportedArg(stage.colorArg1)
+       || !isSupportedArg(stage.colorArg2)
+       || (stage.colorOp == D3DTOP_MULTIPLYADD && !isSupportedArg(stage.colorArg0))
+       || stage.texcoordIndex >= 4u
+       || stage.texcoordGen > 4u)
+        return D3DERR_NOTAVAILABLE;
+
+      if (stage.texcoordGen != 0u)
+        texgenCount += 1u;
+
+      const bool isBumpStage = stage.colorOp == D3DTOP_BUMPENVMAP
+                            || stage.colorOp == D3DTOP_BUMPENVMAPLUMINANCE;
+      if (isBumpStage != (useBumpmap && draw.bumpmapStage == i))
+        return D3DERR_NOTAVAILABLE;
+    }
+
+    if (useTexgen != (texgenCount != 0u))
+      return D3DERR_NOTAVAILABLE;
+
+    if (!m_state.vertexDecl
+     || !m_state.indices
+     || !m_state.vertexBuffers[0].vertexBuffer
+     || m_state.vertexShader
+     || m_state.pixelShader)
+      return D3DERR_INVALIDCALL;
+
+    if (m_state.renderStates[D3DRS_CLIPPLANEENABLE] != 0u)
+      return D3DERR_NOTAVAILABLE;
+
+    if (m_state.renderStates[D3DRS_VERTEXBLEND] != draw.vertexBlendState)
+      return D3DERR_INVALIDCALL;
+
+    const uint32_t usedSamplerMask = draw.activeStageCount != 0u
+      ? (1u << draw.activeStageCount) - 1u
+      : 0u;
+
+    if (((m_textureSlotTracking.depth
+        | m_textureSlotTracking.fetch4
+        | m_textureSlotTracking.drefClamp) & usedSamplerMask) != 0u)
+      return D3DERR_NOTAVAILABLE;
+
+    for (uint32_t i : bit::BitMask(usedSamplerMask & m_textureSlotTracking.bound)) {
+      if (m_state.textures[i]->GetType() != D3DRTYPE_TEXTURE)
+        return D3DERR_NOTAVAILABLE;
+    }
+
+    return D3D_OK;
+  }
+
+
+  HRESULT D3D9DeviceEx::DrawMorrowindPpl(
+          const DxvkMorrowindPplDrawV1& packet) {
+    HRESULT status = ValidateMorrowindPpl(packet);
+    if (FAILED(status))
+      return status;
+
+    D3D9MorrowindPplData data = { };
+    data.flags = packet.flags;
+    data.uvSetCount = packet.uvSetCount;
+    data.vertexBlendState = packet.vertexBlendState;
+    data.vertexMaterialMode = packet.vertexMaterialMode;
+    data.fogMode = packet.fogMode;
+    data.activeStageCount = packet.activeStageCount;
+    data.lightSlotCount = packet.lightSlotCount;
+    data.bumpmapStage = packet.bumpmapStage;
+    data.texgenStage = packet.texgenStage;
+
+    std::memcpy(data.stages, packet.stages, sizeof(data.stages));
+    std::memcpy(data.projection, packet.projection, sizeof(data.projection));
+    std::memcpy(data.worldView, packet.worldView, sizeof(data.worldView));
+    std::memcpy(data.texgenTransform, packet.texgenTransform, sizeof(data.texgenTransform));
+    std::memcpy(data.materialDiffuse, packet.materialDiffuse, sizeof(data.materialDiffuse));
+    std::memcpy(data.materialAmbient, packet.materialAmbient, sizeof(data.materialAmbient));
+    std::memcpy(data.materialEmissive, packet.materialEmissive, sizeof(data.materialEmissive));
+    std::memcpy(data.sceneAmbient, packet.sceneAmbient, sizeof(data.sceneAmbient));
+    std::memcpy(data.sunDiffuse, packet.sunDiffuse, sizeof(data.sunDiffuse));
+    std::memcpy(data.sunDirection, packet.sunDirection, sizeof(data.sunDirection));
+    std::memcpy(data.lightDiffuse, packet.lightDiffuse, sizeof(data.lightDiffuse));
+    std::memcpy(data.lightAmbient, packet.lightAmbient, sizeof(data.lightAmbient));
+    std::memcpy(data.lightPosition, packet.lightPosition, sizeof(data.lightPosition));
+    std::memcpy(data.lightFalloffQuadratic, packet.lightFalloffQuadratic, sizeof(data.lightFalloffQuadratic));
+    data.lightFalloffConstant = packet.lightFalloffConstant;
+    std::memcpy(data.fogColor, packet.fogColor, sizeof(data.fogColor));
+    data.nearFogStart = packet.nearFogStart;
+    data.nearFogRange = packet.nearFogRange;
+    std::memcpy(data.bumpMatrix, packet.bumpMatrix, sizeof(data.bumpMatrix));
+    std::memcpy(data.bumpLumiScaleBias, packet.bumpLumiScaleBias, sizeof(data.bumpLumiScaleBias));
+
+    UINT minVertexIndex = packet.minVertexIndex;
+    UINT vertexCount = packet.vertexCount;
+    UINT startIndex = packet.startIndex;
+    INT baseVertexIndex = packet.baseVertexIndex;
+    uint32_t indexCount = GetVertexCount(
+      D3DPRIMITIVETYPE(packet.primitiveType), packet.primitiveCount);
+
+    bool dynamicSysmemVBOs = false;
+    bool dynamicSysmemIBO = false;
+    UploadPerDrawData(
+      minVertexIndex,
+      vertexCount,
+      startIndex,
+      indexCount,
+      baseVertexIndex,
+      &dynamicSysmemVBOs,
+      &dynamicSysmemIBO);
+
+    PrepareMorrowindPplDraw(
+      D3DPRIMITIVETYPE(packet.primitiveType),
+      !dynamicSysmemVBOs,
+      !dynamicSysmemIBO,
+      data);
+
+    VkDrawIndexedIndirectCommand draw = { };
+    draw.indexCount = indexCount;
+    draw.instanceCount = GetInstanceCount();
+    draw.firstIndex = startIndex;
+    draw.vertexOffset = baseVertexIndex;
+
+    if (m_csDataType == D3D9CmdType::DrawIndexed) {
+      auto* drawArgs = m_csChunk->pushData(m_csData, 1u);
+
+      if (likely(drawArgs)) {
+        new (drawArgs) VkDrawIndexedIndirectCommand(draw);
+        return D3D_OK;
+      }
+    }
+
+    EmitCsCmd<VkDrawIndexedIndirectCommand>(D3D9CmdType::DrawIndexed, 1u,
+      [this] (DxvkContext* ctx, VkDrawIndexedIndirectCommand* drawArgs, uint32_t drawCount) {
+      if (unlikely(m_iaState.streamsInstanced
+                && !(m_iaState.streamsInstanced & m_iaState.streamsUsed))) {
+        for (uint32_t i = 0u; i < drawCount; i++)
+          drawArgs[i].instanceCount = 1u;
+      }
+
+      ctx->drawIndexed(drawCount, drawArgs);
+    });
+
+    new (m_csData->first()) VkDrawIndexedIndirectCommand(draw);
+    return D3D_OK;
+  }
+
+
+  void D3D9DeviceEx::BindMorrowindPplShaders() {
+    if (m_morrowindPplShadersBound)
+      return;
+
+    EmitCs([
+      cVertexShader = m_morrowindPplModules.GetShader<D3D9ShaderType::VertexShader>(),
+      cPixelShader = m_morrowindPplModules.GetShader<D3D9ShaderType::PixelShader>()
+    ] (DxvkContext* ctx) mutable {
+      ctx->bindShader<VK_SHADER_STAGE_VERTEX_BIT>(std::move(cVertexShader));
+      ctx->bindShader<VK_SHADER_STAGE_FRAGMENT_BIT>(std::move(cPixelShader));
+    });
+
+    m_morrowindPplShadersBound = true;
+  }
+
+
+  void D3D9DeviceEx::RestoreShadersAfterMorrowindPpl() {
+    if (!m_morrowindPplShadersBound)
+      return;
+
+    if (UseProgrammableVS())
+      BindShader<D3D9ShaderType::VertexShader>(GetCommonShader(m_state.vertexShader));
+    else
+      BindFFUbershader<D3D9ShaderType::VertexShader>();
+
+    if (UseProgrammablePS())
+      BindShader<D3D9ShaderType::PixelShader>(GetCommonShader(m_state.pixelShader));
+    else
+      BindFFUbershader<D3D9ShaderType::PixelShader>();
+
+    m_morrowindPplShadersBound = false;
+    m_dirty.set(D3D9DeviceDirtyFlag::InputLayout,
+                D3D9DeviceDirtyFlag::FFPixelShader);
+
+    const uint32_t ordinarySamplerMask =
+      PSShaderMasks().samplerMask | VSShaderMasks().samplerMask;
+    m_textureSlotTracking.textureDirty |= ordinarySamplerMask;
+    m_textureSlotTracking.samplerStateDirty |=
+      ordinarySamplerMask & m_textureSlotTracking.bound;
+  }
+
+
+  void D3D9DeviceEx::PrepareMorrowindPplDraw(
+          D3DPRIMITIVETYPE            PrimitiveType,
+          bool                        UploadVBOs,
+          bool                        UploadIBO,
+    const D3D9MorrowindPplData&       data) {
+    const uint32_t usedSamplerMask = data.activeStageCount != 0u
+      ? (1u << data.activeStageCount) - 1u
+      : 0u;
+    const uint32_t usedTextureMask =
+      m_textureSlotTracking.bound & usedSamplerMask;
+
+    const uint32_t oldFfpsTextures = m_textureSlotTracking.ffpsTextures;
+    m_textureSlotTracking.ffpsTextures = usedSamplerMask;
+    UpdateActiveHazardsRT(oldFfpsTextures | usedSamplerMask);
+    UpdateActiveHazardsDS(oldFfpsTextures | usedSamplerMask);
+
+    if (unlikely(m_textureSlotTracking.unresolvableHazardRT != 0
+              || m_textureSlotTracking.unresolvableHazardDS != 0))
+      EmitFeedbackLoopBarriers();
+
+    if (likely(UploadVBOs)) {
+      const uint32_t usedBuffersMask = m_state.vertexDecl
+        ? m_state.vertexDecl->GetStreamMask()
+        : ~0u;
+      const uint32_t buffersToUpload =
+        m_vbSlotTracking.needsUpload & usedBuffersMask;
+      for (uint32_t bufferIdx : bit::BitMask(buffersToUpload)) {
+        auto* vbo = GetCommonBuffer(m_state.vertexBuffers[bufferIdx].vertexBuffer);
+        if (likely(vbo != nullptr && vbo->NeedsUpload()))
+          FlushBuffer(vbo);
+      }
+      m_vbSlotTracking.needsUpload &= ~buffersToUpload;
+    }
+
+    const uint32_t texturesToUpload =
+      m_textureSlotTracking.needsUpload & usedTextureMask;
+    if (unlikely(texturesToUpload != 0u))
+      UploadManagedTextures(texturesToUpload);
+
+    const uint32_t texturesToGen =
+      m_textureSlotTracking.needsMipGen & usedTextureMask;
+    if (unlikely(texturesToGen != 0u))
+      GenerateTextureMips(texturesToGen);
+
+    auto* ibo = GetCommonBuffer(m_state.indices);
+    if (unlikely(UploadIBO && ibo != nullptr && ibo->NeedsUpload()))
+      FlushBuffer(ibo);
+
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::Framebuffer)))
+      BindFramebuffer();
+
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::ViewportScissor)))
+      BindViewportAndScissor();
+
+    const uint32_t activeDirtySamplers =
+      m_textureSlotTracking.samplerStateDirty & usedTextureMask;
+    if (unlikely(activeDirtySamplers != 0u))
+      UndirtySamplers(activeDirtySamplers);
+
+    const uint32_t usedDirtyTextures =
+      m_textureSlotTracking.textureDirty & usedSamplerMask;
+    if (likely(usedDirtyTextures != 0u))
+      UndirtyTextures(usedDirtyTextures);
+
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::BlendState)))
+      BindBlendState();
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::DepthStencilState)))
+      BindDepthStencilState();
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::RasterizerState)))
+      BindRasterizerState();
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::DepthBias)))
+      BindDepthBias();
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::MultiSampleState)))
+      BindMultiSampleState();
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::AlphaTestState)))
+      BindAlphaTestState();
+
+    UpdatePointMode(PrimitiveType == D3DPT_POINTLIST);
+    BindMorrowindPplShaders();
+
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::InputLayout)))
+      BindInputLayout();
+
+    const uint32_t nullOrUnusedMask = ~usedSamplerMask | ~usedTextureMask;
+    const uint32_t depthTextureMask = m_textureSlotTracking.depth;
+    const uint32_t drefClampMask = m_textureSlotTracking.drefClamp;
+
+    bool specDirty = false;
+    specDirty |= m_specData.setSamplerProjectionMask(0u);
+    specDirty |= m_specData.setPsSamplers(
+      m_textureSlotTracking.textureType,
+      nullOrUnusedMask,
+      0u,
+      depthTextureMask,
+      drefClampMask);
+    specDirty |= m_specData.setVsSamplers(
+      ~0u,
+      depthTextureMask,
+      drefClampMask);
+
+    if (specDirty)
+      m_dirty.set(D3D9DeviceDirtyFlag::SpecializationEntries);
+
+    auto pplData = GetConstantBuffer(CbvIndex::MorrowindPpl)
+      .AllocTyped<D3D9MorrowindPplData>(1u);
+    *pplData = data;
+
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::DepthBounds))) {
+      m_dirty.clr(D3D9DeviceDirtyFlag::DepthBounds);
+
+      DxvkDepthBounds db = { };
+      db.minDepthBounds = 0.0f;
+      db.maxDepthBounds = 1.0f;
+
+      if (m_nvdbEnabled) {
+        db.minDepthBounds = std::clamp(
+          bit::cast<float>(m_state.renderStates[D3DRS_ADAPTIVETESS_Z]),
+          0.0f, 1.0f);
+        db.maxDepthBounds = std::clamp(
+          bit::cast<float>(m_state.renderStates[D3DRS_ADAPTIVETESS_W]),
+          0.0f, 1.0f);
+
+        if (db.maxDepthBounds < db.minDepthBounds) {
+          db.minDepthBounds = 0.0f;
+          db.maxDepthBounds = 1.0f;
+        }
+      }
+
+      EmitCs([cDepthBounds = db] (DxvkContext* ctx) {
+        ctx->setDepthBounds(cDepthBounds);
+      });
+    }
+
+    if (m_dirty.test(D3D9DeviceDirtyFlag::SpecializationEntries))
+      BindSpecConstants();
+
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::VertexBuffers) && UploadVBOs)) {
+      for (uint32_t i = 0u; i < caps::MaxStreams; i++) {
+        const D3D9VBO& vbo = m_state.vertexBuffers[i];
+        BindVertexBuffer(
+          i, vbo.vertexBuffer.ptr(), vbo.offset, vbo.length, vbo.stride);
+      }
+      m_dirty.clr(D3D9DeviceDirtyFlag::VertexBuffers);
+    }
+
+    if (unlikely(m_dirty.test(D3D9DeviceDirtyFlag::IndexBuffer) && UploadIBO)) {
+      BindIndices();
+      m_dirty.clr(D3D9DeviceDirtyFlag::IndexBuffer);
+    }
+
+    if (m_dirty.any(D3D9DeviceDirtyFlag::PushDataShared,
+                    D3D9DeviceDirtyFlag::PushDataVs,
+                    D3D9DeviceDirtyFlag::PushDataFfvs,
+                    D3D9DeviceDirtyFlag::PushDataFfps))
+      UpdatePushData();
+
+    ApplyPrimitiveType(PrimitiveType);
+  }
+
+
   void D3D9DeviceEx::PrepareDraw(D3DPRIMITIVETYPE PrimitiveType, bool UploadVBOs, bool UploadIBO) {
+    RestoreShadersAfterMorrowindPpl();
+
     // Need to update texture masks for FFPS early so that we properly track hazards
     if (unlikely(!UseProgrammablePS()) && m_dirty.test(D3D9DeviceDirtyFlag::FFPixelShader))
       UpdateFixedFunctionPS();
