@@ -651,6 +651,47 @@ namespace dxvk {
     return m_device->DrawMorrowindPpl(packet);
   }
 
+
+  DxvkMorrowindMemoryInterop::DxvkMorrowindMemoryInterop(
+          D3D9DeviceEx*         pInterface)
+    : m_device(pInterface) {
+
+  }
+
+  DxvkMorrowindMemoryInterop::~DxvkMorrowindMemoryInterop() {
+
+  }
+
+  ULONG STDMETHODCALLTYPE DxvkMorrowindMemoryInterop::AddRef() {
+    return m_device->AddRef();
+  }
+
+  ULONG STDMETHODCALLTYPE DxvkMorrowindMemoryInterop::Release() {
+    return m_device->Release();
+  }
+
+  HRESULT STDMETHODCALLTYPE DxvkMorrowindMemoryInterop::QueryInterface(
+          REFIID                riid,
+          void**                ppvObject) {
+    return m_device->QueryInterface(riid, ppvObject);
+  }
+
+  HRESULT STDMETHODCALLTYPE DxvkMorrowindMemoryInterop::GetDeviceLocalMemoryBudgetV1(
+          uint64_t*             memoryBudget,
+          uint64_t*             memoryUsed) {
+    if (!memoryBudget || !memoryUsed)
+      return E_POINTER;
+
+    DxvkMemoryStats stats = { };
+    if (!m_device->GetDXVKDevice()->getDeviceLocalBufferMemoryStats(stats)
+     || !stats.memoryBudget)
+      return D3DERR_NOTAVAILABLE;
+
+    *memoryBudget = stats.memoryBudget;
+    *memoryUsed = stats.memoryUsed;
+    return S_OK;
+  }
+
   D3D9VkExtInterface::D3D9VkExtInterface(D3D9InterfaceEx *pInterface)
     : m_interface(pInterface) {
 

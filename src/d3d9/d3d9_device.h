@@ -230,6 +230,7 @@ namespace dxvk {
     friend D3D9VkInteropDevice;
     friend class DxvkMorrowindInterop;
     friend class DxvkMorrowindPplInterop;
+    friend class DxvkMorrowindMemoryInterop;
 
     using CbvIndex = D3D9ShaderResourceMapping::CbvIndex;
   public:
@@ -1708,6 +1709,7 @@ namespace dxvk {
     D3D9VkInteropDevice             m_d3d9Interop;
     DxvkMorrowindInterop             m_morrowindInterop;
     DxvkMorrowindPplInterop          m_morrowindPplInterop;
+    DxvkMorrowindMemoryInterop       m_morrowindMemoryInterop;
     D3D9ON12_ARGS                   m_d3d9On12Args = { };
     D3D9On12                        m_d3d9On12;
 

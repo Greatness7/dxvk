@@ -1270,6 +1270,17 @@ namespace dxvk {
     DxvkMemoryStats getMemoryStats(uint32_t heap) const;
 
     /**
+     * \brief Queries device-local global-buffer memory stats
+     *
+     * Selects the same heap family used by ordinary device-local buffers and
+     * returns a mutex-protected snapshot of its policy-adjusted budget and
+     * live allocator usage.
+     * \param [out] stats Memory statistics
+     * \returns \c true if a matching memory type exists
+     */
+    bool getDeviceLocalBufferMemoryStats(DxvkMemoryStats& stats);
+
+    /**
      * \brief Retrieves detailed memory statistics
      *
      * Queries statistics for each memory type and each allocated chunk.

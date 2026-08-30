@@ -2224,6 +2224,21 @@ namespace dxvk {
   }
 
 
+  bool DxvkMemoryAllocator::getDeviceLocalBufferMemoryStats(DxvkMemoryStats& stats) {
+    std::lock_guard<dxvk::mutex> lock(m_mutex);
+
+    uint32_t memoryTypeMask = m_globalBufferMemoryTypes
+      & getMemoryTypeMask(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (!memoryTypeMask)
+      return false;
+
+    const auto& type = m_memTypes[bit::tzcnt(memoryTypeMask)];
+    stats = getMemoryStats(type.heap->index);
+    return true;
+  }
+
+
   void DxvkMemoryAllocator::getAllocationStats(DxvkMemoryAllocationStats& stats) {
     std::lock_guard<dxvk::mutex> lock(m_mutex);
 

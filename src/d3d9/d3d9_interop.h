@@ -204,6 +204,33 @@ namespace dxvk {
 
   };
 
+  class DxvkMorrowindMemoryInterop final : public IDxvkMorrowindMemoryInterop1 {
+
+  public:
+
+    DxvkMorrowindMemoryInterop(
+            D3D9DeviceEx*         pInterface);
+
+    ~DxvkMorrowindMemoryInterop();
+
+    ULONG STDMETHODCALLTYPE AddRef();
+
+    ULONG STDMETHODCALLTYPE Release();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(
+            REFIID                riid,
+            void**                ppvObject);
+
+    HRESULT STDMETHODCALLTYPE GetDeviceLocalMemoryBudgetV1(
+            uint64_t*             memoryBudget,
+            uint64_t*             memoryUsed);
+
+  private:
+
+    D3D9DeviceEx* m_device;
+
+  };
+
   class D3D9VkExtInterface final : public ID3D9VkExtInterface {
 
   public:

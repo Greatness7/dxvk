@@ -62,6 +62,7 @@ namespace dxvk {
     , m_d3d9Interop        ( this )
     , m_morrowindInterop    ( this )
     , m_morrowindPplInterop ( this )
+    , m_morrowindMemoryInterop ( this )
     , m_d3d9On12Args       ( pAdapter->Get9On12Args() )
     , m_d3d9On12           ( this )
     , m_legacyD3DBridge    ( this )
@@ -207,6 +208,11 @@ namespace dxvk {
 
     if (riid == __uuidof(IDxvkMorrowindPplInterop1)) {
       *ppvObject = ref(&m_morrowindPplInterop);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IDxvkMorrowindMemoryInterop1)) {
+      *ppvObject = ref(&m_morrowindMemoryInterop);
       return S_OK;
     }
 
