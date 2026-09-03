@@ -34,7 +34,7 @@ jobs:
       uses: Joshua-Ashton/gcc-problem-matcher@master
 
     - name: Build 32-bit d3d9.dll
-      uses: Joshua-Ashton/arch-mingw-github-action@v8
+      uses: WinterSnowfall/arch-mingw-github-action@v2
       with:
         command: |
           meson setup \
